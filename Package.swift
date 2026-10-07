@@ -9,6 +9,12 @@ let package = Package(
             name: "SessionBar",
             path: "Sources/SessionBar",
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
+        .testTarget(
+            name: "SessionBarTests",
+            dependencies: ["SessionBar"],
+            path: "Tests/SessionBarTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

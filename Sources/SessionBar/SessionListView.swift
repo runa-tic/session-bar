@@ -12,8 +12,13 @@ struct SessionListView: View {
                 state: store.remote,
                 placeholder: store.remoteRefreshing ? "Asking the account…" : "Not loaded yet",
                 asOf: store.remoteFetchedAt,
-                refreshing: store.remoteRefreshing
+                note: store.remoteNote,
+                refreshing: store.remoteRefreshing,
+                onFix: store.fix
             )
+            if let error = store.loginItemError {
+                Note(text: error)
+            }
             Divider().padding(.top, 6)
             Footer(store: store)
         }
@@ -28,7 +33,10 @@ private struct PlatformSection: View {
     let state: SourceState?
     var placeholder = ""
     var asOf: Date?
+    /// Something to know about the list as a whole, shown on hover.
+    var note: String?
     var refreshing = false
+    var onFix: ((SourceState.Fix) -> Void)?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -37,6 +45,7 @@ private struct PlatformSection: View {
                 Text("as of \(asOf.formatted(date: .omitted, time: .shortened))")
                     .fontWeight(.regular)
                     .foregroundStyle(.tertiary)
+                    .help(note ?? "")
             }
             Spacer()
             if refreshing {
@@ -58,8 +67,20 @@ private struct PlatformSection: View {
             Note(text: "No sessions running")
         case .sessions(let sessions):
             ForEach(sessions) { SessionRow(session: $0) }
-        case .unavailable(let reason):
+        case .unavailable(let reason, let fix):
             Note(text: reason)
+            if let fix, let onFix {
+                Button(title(for: fix)) { onFix(fix) }
+                    .font(.callout)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func title(for fix: SourceState.Fix) -> String {
+        switch fix {
+        case .trustHelperFolder: return "Trust it in Terminal…"
         }
     }
 }
@@ -121,12 +142,20 @@ private struct SessionRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(session.cwd ?? "")
+        .help(details)
     }
 
     private var trailing: String {
-        guard let startedAt = session.startedAt else { return session.status }
-        return "\(session.status) · \(age(since: startedAt))"
+        let state = session.waitingFor ?? session.status
+        guard let startedAt = session.startedAt else { return state }
+        return "\(state) · \(age(since: startedAt))"
+    }
+
+    private var details: String {
+        let started = session.startedAt.map {
+            "Started \($0.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return [session.cwd, started].compactMap { $0 }.joined(separator: "\n")
     }
 
     private var statusColor: Color {
@@ -162,11 +191,25 @@ private struct Footer: View {
     @ObservedObject var store: SessionStore
 
     var body: some View {
-        HStack {
-            Button("Refresh \(store.remotePlatform.lowercased())") { store.refreshRemote() }
+        HStack(spacing: 10) {
+            Button("Refresh \(remote)") { store.refreshRemote() }
                 .disabled(!store.canRefreshRemote)
                 .help("Starts a short helper session to read the account's session list")
             Spacer()
+            Menu {
+                Toggle("Open at login", isOn: Binding(
+                    get: { store.opensAtLogin }, set: { store.setOpensAtLogin($0) }))
+                Toggle("Refresh \(remote) when the menu opens", isOn: $store.refreshesOnOpen)
+                Divider()
+                Button("SessionBar on GitHub") { NSWorkspace.shared.open(SessionBarApp.homepage) }
+                Text("Version \(SessionBarApp.version)")
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Settings")
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
         .buttonStyle(.plain)
@@ -176,4 +219,6 @@ private struct Footer: View {
         .padding(.top, 6)
         .padding(.bottom, 2)
     }
+
+    private var remote: String { store.remotePlatform.lowercased() }
 }
